@@ -1,0 +1,10 @@
+{
+  "name": "BombTouch",
+  "version": "0.0.0",
+  "dependencies": {
+    "PxLoaderNoDependencies": "*",
+    "pixi.js": "~1.6.0",
+    "lodash": "~3.3.1",
+    "victor": "~0.2.6"
+  }
+}
