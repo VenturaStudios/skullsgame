@@ -7,18 +7,21 @@ var _ = require('lodash');
 var Board = require('../models/board');
 var Player = require('../models/player');
 var Lifes = require('../models/lifes');
+var EnemiesController = require('../controllers/enemiesController');
 
 var bgColor = '#08101A';
-var board, lifes, player;
+var board, lifes, player, enemiesController;
 
 function update(dt, context, canvas){
-  player.update(dt, context, canvas);
+  player.update(dt, context, canvas, enemiesController.enemies);
+  enemiesController.update(dt, context, canvas);
 }
 
 function render(context,canvas){
   board.render(context);
   player.render(context);
   lifes.render(context);
+  enemiesController.render(context);
 }
 
 function start(context, canvas){
@@ -49,8 +52,11 @@ function start(context, canvas){
     x : 30,
     y : 30,
     lifes : lifes
-  })
+  });
 
+  enemiesController = new EnemiesController({
+    board : board
+  });
 }
 
 /**
@@ -83,7 +89,7 @@ function initialize(canvas){
 module.exports = {
   initialize : initialize
 }
-},{"../lib/Engine":4,"../lib/loader":7,"../lib/utils":8,"../models/board":10,"../models/lifes":11,"../models/particleCombustible":13,"../models/player":14,"lodash":15}],2:[function(require,module,exports){
+},{"../controllers/enemiesController":3,"../lib/Engine":5,"../lib/loader":8,"../lib/utils":9,"../models/board":11,"../models/lifes":12,"../models/particleCombustible":14,"../models/player":15,"lodash":17}],2:[function(require,module,exports){
 var Engine = require('../lib/Engine');
 var Particle = require('../models/particleCombustible');
 var Utils = require('../lib/utils');
@@ -166,7 +172,41 @@ module.exports = {
   initialize : initialize, 
   stop: stop
 }
-},{"../lib/Engine":4,"../lib/utils":8,"../models/loaderItem":12,"../models/particleCombustible":13,"lodash":15}],3:[function(require,module,exports){
+},{"../lib/Engine":5,"../lib/utils":9,"../models/loaderItem":13,"../models/particleCombustible":14,"lodash":17}],3:[function(require,module,exports){
+var Utils = require('../lib/utils');
+var SkullEnemy = require('../models/skullEnemy');
+var _ = require('lodash');
+
+function EnemiesController(options){
+  this.enemies = [];
+  this.board = options.board;
+
+  for(var i = 0; i < 5; i++){
+    this.enemies.push(new SkullEnemy({
+      x : Utils.randomInteger(0, options.board.width),
+      y : Utils.randomInteger(options.board.y, options.board.y + options.board.height),
+      board : options.board
+    }))
+  }
+}
+
+EnemiesController.prototype.update = function(dt, context, canvas){
+  this.enemies = _.compact(this.enemies.map(function(enemy){
+    enemy.update(dt);
+    if(!enemy.hasOwnProperty('collided')){
+      return enemy;
+    }
+  }));
+}
+
+EnemiesController.prototype.render = function(dt, context, canvas){
+  this.enemies.forEach(function(enemy){
+    enemy.render(dt);
+  });
+}
+
+module.exports = EnemiesController;
+},{"../lib/utils":9,"../models/skullEnemy":16,"lodash":17}],4:[function(require,module,exports){
 var Victor = require('victor');
 
 //BaseEntity.js
@@ -197,7 +237,7 @@ BaseEntity.prototype.render = function(context, canvas){
 }
 
 module.exports = BaseEntity
-},{"victor":16}],4:[function(require,module,exports){
+},{"victor":18}],5:[function(require,module,exports){
 function Engine(canvas, loopable, maxIterations){
   this.canvas = canvas;
   this.context = canvas.getContext('2d');
@@ -300,7 +340,7 @@ Engine.prototype.setClearingMethod  = function (cb) {
 }
 
 module.exports = Engine
-},{}],5:[function(require,module,exports){
+},{}],6:[function(require,module,exports){
 function Sprite(img){
   this.img = img;
   this.animations = {};
@@ -374,7 +414,7 @@ Sprite.prototype.render = function(ctx, x, y, resizeX, resizeY, angle){
 }
 
 module.exports = Sprite
-},{}],6:[function(require,module,exports){
+},{}],7:[function(require,module,exports){
 var pressedKeys = {};
 
 function setKey(event, status) {
@@ -425,7 +465,7 @@ var input = {
 };
 
 module.exports = input;
-},{}],7:[function(require,module,exports){
+},{}],8:[function(require,module,exports){
 var loader;
 var images = {};
 var audios = {};
@@ -467,7 +507,7 @@ module.exports = {
   start: start,
   initialize : initialize
 }
-},{}],8:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 /**
   Utils you will use so maany times
 **/
@@ -563,8 +603,77 @@ Utils.randomColor = function(){
   }
   return color;
 }
+
+Utils.collides = function(rect1, rect2){
+  return (rect1.x < rect2.x + rect2.width &&
+   rect1.x + rect1.width > rect2.x &&
+   rect1.y < rect2.y + rect2.height &&
+   rect1.height + rect1.y > rect2.y) 
+}
+
+Utils.entitiesCollide = function(hitboxA, hitboxB){
+  return doPolygonsIntersect(hitboxA, hitboxB);
+}
+
+function doPolygonsIntersect (a, b) {
+  var polygons = [a, b];
+  var minA,  maxA, projected, i, i1, j, minB, maxB;
+  var aPoints = a.getPoints();
+  var bPoints = b.getPoints();
+
+  for (i = 0; i < polygons.length; i++) {
+
+      // for each polygon, look at each edge of the polygon, and determine if it separates
+      // the two shapes
+      var polygon = polygons[i].getPoints();
+      for (i1 = 0; i1 < polygon.length; i1++) {
+
+          // grab 2 vertices to create an edge
+          var i2 = (i1 + 1) % polygon.length;
+          var p1 = polygon[i1];
+          var p2 = polygon[i2];
+
+          // find the line perpendicular to this edge
+          var normal = [p2[1] - p1[1],  p1[0] - p2[0]];
+
+          minA = maxA = undefined;
+          // for each vertex in the first shape, project it onto the line perpendicular to the edge
+          // and keep track of the min and max of these values
+          for (j = 0; j < aPoints.length; j++) {
+              projected = normal[0] * aPoints[j][0] + normal[1] * aPoints[j][1];
+              if (isUndefined(minA) || projected < minA) {
+                  minA = projected;
+              }
+              if (isUndefined(maxA) || projected > maxA) {
+                  maxA = projected;
+              }
+          }
+
+          // for each vertex in the second shape, project it onto the line perpendicular to the edge
+          // and keep track of the min and max of these values
+          minB = maxB = undefined;
+          for (j = 0; j < bPoints.length; j++) {
+              projected = normal[0] * bPoints[j][0] + normal[1] * bPoints[j][1];
+              if (isUndefined(minB) || projected < minB) {
+                  minB = projected;
+              }
+              if (isUndefined(maxB) || projected > maxB) {
+                  maxB = projected;
+              }
+          }
+
+          // if there is no overlap between the projects, the edge we are looking at separates the two
+          // polygons, and we know there is no overlap
+          if (maxA < minB || maxB < minA) {
+              return false;
+          }
+      }
+  }
+  return true;
+};
+
 module.exports = Utils;
-},{}],9:[function(require,module,exports){
+},{}],10:[function(require,module,exports){
 var loader = require('./lib/loader');
 var behavior = require('./behaviors/game');
 var behaviorLoader = require('./behaviors/loader_behavior');
@@ -586,7 +695,7 @@ function start(){
   });
   loader.start();
 }
-},{"./behaviors/game":1,"./behaviors/loader_behavior":2,"./lib/loader":7}],10:[function(require,module,exports){
+},{"./behaviors/game":1,"./behaviors/loader_behavior":2,"./lib/loader":8}],11:[function(require,module,exports){
 function Board(options){
   this.x = options.x;
   this.y = options.y;
@@ -597,7 +706,7 @@ function Board(options){
 
 Board.prototype.render = function(context){
   context.save();
-
+  context.beginPath();
   context.translate(this.x, this.y);
   context.rect(0, 0, this.width, this.height);
   var gradient = context.createLinearGradient(0, 0, 0, this.height);
@@ -605,7 +714,7 @@ Board.prototype.render = function(context){
   gradient.addColorStop(1, "rgb(255, 0, 0)");
   context.fillStyle = gradient;
   context.fill();
-
+  
   context.restore();
 }
 
@@ -618,7 +727,7 @@ Board.prototype.collides = function(item){
 }
 
 module.exports = Board
-},{}],11:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 var loader = require('../lib/loader');
 
 function Lifes(options){
@@ -649,9 +758,16 @@ Lifes.prototype.render = function(context){
   context.restore();
 }
 
+Lifes.prototype.quit = function(){
+  this.amount--;
+}
+
+Lifes.prototype.add = function(){
+  this.amount++;
+}
 
 module.exports = Lifes
-},{"../lib/loader":7}],12:[function(require,module,exports){
+},{"../lib/loader":8}],13:[function(require,module,exports){
 var Utils = require('../lib/utils');
 var Victor = require('victor');
 
@@ -841,7 +957,7 @@ Item.prototype.recalculateSize = function(dt){
 }
 
 module.exports = Item
-},{"../lib/utils":8,"victor":16}],13:[function(require,module,exports){
+},{"../lib/utils":9,"victor":18}],14:[function(require,module,exports){
 var BaseEntity = require('../lib/BaseEntity');
 var Victor = require('victor');
 var Utils = require('../lib/utils');
@@ -953,7 +1069,7 @@ Particle.prototype.render = function(context){
 
 
 module.exports = Particle
-},{"../lib/BaseEntity":3,"../lib/utils":8,"victor":16}],14:[function(require,module,exports){
+},{"../lib/BaseEntity":4,"../lib/utils":9,"victor":18}],15:[function(require,module,exports){
 var BaseEntity = require('../lib/BaseEntity');
 var Victor = require('victor');
 var Utils = require('../lib/utils');
@@ -968,6 +1084,10 @@ function Player(opts){
 
   BaseEntity.prototype.constructor.call(this, opts);
   this.board = opts.board;
+  this.lifes = opts.lifes;
+  this.width = 30;
+  this.height = 30;
+
   this.sprite = new sprite(loader.getImage('player'));
   this.sprite.addAnimation('standby', [0,1], [30, 30], 1000, [0, 0]);
   this.sprite.addAnimation('moveup', [0,1], [30, 30], 1000, [90, 0]);
@@ -985,12 +1105,12 @@ Player.prototype.render = function(context){
   context.save();
   //context.translate(this.board.x, this.board.y);
 
-  this.sprite.render(context, this.pos.x, this.pos.y, 30, 30, this.angle);
+  this.sprite.render(context, this.pos.x, this.pos.y, this.width, this.height, this.angle);
 
   context.restore();
 }
 
-Player.prototype.update = function(dt, context, canvas){
+Player.prototype.update = function(dt, context, canvas, enemies){
   this.parent.update.call(this, dt);
   this.sprite.update(dt);
   
@@ -1018,10 +1138,99 @@ Player.prototype.update = function(dt, context, canvas){
   }else if(this.pos.y <= this.board.y){
     this.pos.y = this.board.y;
   }
+
+  if(this.collidesWith(enemies)){
+    this.lifes.quit();
+  }
 }
 
+Player.prototype.collidesWith = function(items) {
+  var collides = false;
+
+  var playerBox = {
+    x : this.pos.x,
+    y : this.pos.y,
+    width : this.width, 
+    height : this.height
+  }
+
+  for(var i = 0; i < items.length; i++){
+    var itemBox = {
+      x : items[i].pos.x,
+      y : items[i].pos.y,
+      width : items[i].width,
+      height : items[i].height
+    }
+
+    if(Utils.collides(playerBox, itemBox)){
+      collides = true;
+      items[i].collided = true;
+    }
+  }
+  return collides;
+};
+
 module.exports = Player;
-},{"../lib/BaseEntity":3,"../lib/Sprite":5,"../lib/input":6,"../lib/loader":7,"../lib/utils":8,"victor":16}],15:[function(require,module,exports){
+},{"../lib/BaseEntity":4,"../lib/Sprite":6,"../lib/input":7,"../lib/loader":8,"../lib/utils":9,"victor":18}],16:[function(require,module,exports){
+var BaseEntity = require('../lib/BaseEntity');
+var Victor = require('victor');
+var Utils = require('../lib/utils');
+var sprite = require('../lib/Sprite');
+var loader = require('../lib/loader');
+var input = require('../lib/input');
+var INITIAL_DROP_TIME = 2000;
+
+function SkullEnemy(opts){
+  //Add the board base position
+  BaseEntity.prototype.constructor.call(this, opts);
+  this.board = opts.board;
+  this.droppingTime = INITIAL_DROP_TIME;
+  this.active = false;
+  this.width = 20;
+  this.height = 20;
+  this.sprite = new sprite(loader.getImage('life'));
+  this.sprite.addAnimation('standby', [0], [20, 20], 0);
+  this.sprite.playAnimation('standby');
+}
+
+SkullEnemy.prototype = new BaseEntity({x: 0, y : 0});
+SkullEnemy.prototype.constructor = SkullEnemy;
+SkullEnemy.prototype.parent = BaseEntity.prototype;
+
+SkullEnemy.prototype.render = function(context){
+
+  context.save();
+  var radius = (this.droppingTime / INITIAL_DROP_TIME) * 40;
+
+  var sizeSprite = this.active ? this.width : radius;
+  this.sprite.render(context, this.pos.x, this.pos.y, sizeSprite, sizeSprite, this.angle);
+
+  if(!this.active){
+    context.beginPath();
+    context.arc(this.pos.x, this.pos.y, radius, 0, Math.PI * 2);
+    context.strokeStyle = 'yellow';
+    context.stroke();
+    context.closePath();
+  }
+  context.restore();
+}
+
+SkullEnemy.prototype.update = function(dt, context, canvas){
+  this.parent.update.call(this, dt);
+  this.sprite.update(dt);
+  
+  if(this.droppingTime > 0){
+    this.droppingTime -= dt;
+    this.angle += dt / 10;
+    if(this.droppingTime < 0){
+      this.angle = 0;
+      this.active = true;
+    }
+  }
+}
+
+module.exports = SkullEnemy;
+},{"../lib/BaseEntity":4,"../lib/Sprite":6,"../lib/input":7,"../lib/loader":8,"../lib/utils":9,"victor":18}],17:[function(require,module,exports){
 (function (global){
 /**
  * @license
@@ -7810,7 +8019,7 @@ module.exports = Player;
 }.call(this));
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],16:[function(require,module,exports){
+},{}],18:[function(require,module,exports){
 exports = module.exports = Victor;
 
 /**
@@ -8860,4 +9069,4 @@ function degrees2radian (deg) {
 	return deg / degrees;
 }
 
-},{}]},{},[9]);
+},{}]},{},[10]);

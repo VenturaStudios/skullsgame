@@ -6,18 +6,21 @@ var _ = require('lodash');
 var Board = require('../models/board');
 var Player = require('../models/player');
 var Lifes = require('../models/lifes');
+var EnemiesController = require('../controllers/enemiesController');
 
 var bgColor = '#08101A';
-var board, lifes, player;
+var board, lifes, player, enemiesController;
 
 function update(dt, context, canvas){
-  player.update(dt, context, canvas);
+  player.update(dt, context, canvas, enemiesController.enemies);
+  enemiesController.update(dt, context, canvas);
 }
 
 function render(context,canvas){
   board.render(context);
   player.render(context);
   lifes.render(context);
+  enemiesController.render(context);
 }
 
 function start(context, canvas){
@@ -48,8 +51,11 @@ function start(context, canvas){
     x : 30,
     y : 30,
     lifes : lifes
-  })
+  });
 
+  enemiesController = new EnemiesController({
+    board : board
+  });
 }
 
 /**

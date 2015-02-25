@@ -28,5 +28,12 @@ Lifes.prototype.render = function(context){
   context.restore();
 }
 
+Lifes.prototype.quit = function(){
+  this.amount--;
+}
+
+Lifes.prototype.add = function(){
+  this.amount++;
+}
 
 module.exports = Lifes

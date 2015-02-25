@@ -93,4 +93,73 @@ Utils.randomColor = function(){
   }
   return color;
 }
+
+Utils.collides = function(rect1, rect2){
+  return (rect1.x < rect2.x + rect2.width &&
+   rect1.x + rect1.width > rect2.x &&
+   rect1.y < rect2.y + rect2.height &&
+   rect1.height + rect1.y > rect2.y) 
+}
+
+Utils.entitiesCollide = function(hitboxA, hitboxB){
+  return doPolygonsIntersect(hitboxA, hitboxB);
+}
+
+function doPolygonsIntersect (a, b) {
+  var polygons = [a, b];
+  var minA,  maxA, projected, i, i1, j, minB, maxB;
+  var aPoints = a.getPoints();
+  var bPoints = b.getPoints();
+
+  for (i = 0; i < polygons.length; i++) {
+
+      // for each polygon, look at each edge of the polygon, and determine if it separates
+      // the two shapes
+      var polygon = polygons[i].getPoints();
+      for (i1 = 0; i1 < polygon.length; i1++) {
+
+          // grab 2 vertices to create an edge
+          var i2 = (i1 + 1) % polygon.length;
+          var p1 = polygon[i1];
+          var p2 = polygon[i2];
+
+          // find the line perpendicular to this edge
+          var normal = [p2[1] - p1[1],  p1[0] - p2[0]];
+
+          minA = maxA = undefined;
+          // for each vertex in the first shape, project it onto the line perpendicular to the edge
+          // and keep track of the min and max of these values
+          for (j = 0; j < aPoints.length; j++) {
+              projected = normal[0] * aPoints[j][0] + normal[1] * aPoints[j][1];
+              if (isUndefined(minA) || projected < minA) {
+                  minA = projected;
+              }
+              if (isUndefined(maxA) || projected > maxA) {
+                  maxA = projected;
+              }
+          }
+
+          // for each vertex in the second shape, project it onto the line perpendicular to the edge
+          // and keep track of the min and max of these values
+          minB = maxB = undefined;
+          for (j = 0; j < bPoints.length; j++) {
+              projected = normal[0] * bPoints[j][0] + normal[1] * bPoints[j][1];
+              if (isUndefined(minB) || projected < minB) {
+                  minB = projected;
+              }
+              if (isUndefined(maxB) || projected > maxB) {
+                  maxB = projected;
+              }
+          }
+
+          // if there is no overlap between the projects, the edge we are looking at separates the two
+          // polygons, and we know there is no overlap
+          if (maxA < minB || maxB < minA) {
+              return false;
+          }
+      }
+  }
+  return true;
+};
+
 module.exports = Utils;

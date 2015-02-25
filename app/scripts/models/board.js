@@ -8,7 +8,7 @@ function Board(options){
 
 Board.prototype.render = function(context){
   context.save();
-
+  context.beginPath();
   context.translate(this.x, this.y);
   context.rect(0, 0, this.width, this.height);
   var gradient = context.createLinearGradient(0, 0, 0, this.height);
@@ -16,7 +16,7 @@ Board.prototype.render = function(context){
   gradient.addColorStop(1, "rgb(255, 0, 0)");
   context.fillStyle = gradient;
   context.fill();
-
+  
   context.restore();
 }
 
