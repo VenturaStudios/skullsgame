@@ -1,29 +1,23 @@
 var Engine = require('../lib/Engine');
 var Particle = require('../models/particleCombustible');
 var Utils = require('../lib/utils');
+var loader = require('../lib/loader');
 var _ = require('lodash');
+var Board = require('../models/board');
+var Player = require('../models/player');
+var Lifes = require('../models/lifes');
 
-var MAX_PARTICLES = 80;
-var particles = [];
 var bgColor = '#08101A';
-var colors = ['#659A5C', '#B9A838', '#FFBC21'];
+var board, lifes, player;
 
 function update(dt, context, canvas){
-  
-  particles = _.compact(particles.map(function(shape){
-    shape.update(dt);
-    if(shape.alive){
-      return shape;
-    }else{
-      return newRandomParticle(canvas);
-    }
-  }));
+  player.update(dt, context, canvas);
 }
 
 function render(context,canvas){
-  for(var i = 0; i < particles.length; i++){
-    particles[i].render(context, canvas.width, canvas.height);
-  }
+  board.render(context);
+  player.render(context);
+  lifes.render(context);
 }
 
 function start(context, canvas){
@@ -31,23 +25,31 @@ function start(context, canvas){
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
 
-  for (var i = 0; i < MAX_PARTICLES; i ++){
-    particles.push(newRandomParticle(canvas))
-  }
+  //The map
+  board = new Board({
+    x : 0,
+    y : canvas.height / 2 - 100,
+    width : canvas.width,
+    height : 200,
+    song : loader.getAudio('song')
+  });
 
-}
+  board.start();
 
-function newRandomParticle(canvas){
-  return new Particle({
-      combustible : Utils.randomInteger(100, 300),
-      time : Utils.randomInteger(0,999),
-      consumes : Utils.randomInteger(10, 30),
-      x : Utils.randomInteger(0, canvas.width),
-      y : Utils.randomInteger(0, canvas.height),
-      normalSpeed : Utils.randomInteger(20, 30),
-      angle : Utils.randomInteger(0, 360),
-      color : colors[Utils.randomInteger(0, colors.length - 1)]
-    });
+  lifes = new Lifes({
+    x : 20,
+    y : board.y - 30,
+    amount : 3
+  })
+
+  //The player
+  player = new Player({
+    board : board,
+    x : 30,
+    y : 30,
+    lifes : lifes
+  })
+
 }
 
 /**

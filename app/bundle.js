@@ -2,29 +2,23 @@
 var Engine = require('../lib/Engine');
 var Particle = require('../models/particleCombustible');
 var Utils = require('../lib/utils');
+var loader = require('../lib/loader');
 var _ = require('lodash');
+var Board = require('../models/board');
+var Player = require('../models/player');
+var Lifes = require('../models/lifes');
 
-var MAX_PARTICLES = 80;
-var particles = [];
 var bgColor = '#08101A';
-var colors = ['#659A5C', '#B9A838', '#FFBC21'];
+var board, lifes, player;
 
 function update(dt, context, canvas){
-  
-  particles = _.compact(particles.map(function(shape){
-    shape.update(dt);
-    if(shape.alive){
-      return shape;
-    }else{
-      return newRandomParticle(canvas);
-    }
-  }));
+  player.update(dt, context, canvas);
 }
 
 function render(context,canvas){
-  for(var i = 0; i < particles.length; i++){
-    particles[i].render(context, canvas.width, canvas.height);
-  }
+  board.render(context);
+  player.render(context);
+  lifes.render(context);
 }
 
 function start(context, canvas){
@@ -32,23 +26,31 @@ function start(context, canvas){
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
 
-  for (var i = 0; i < MAX_PARTICLES; i ++){
-    particles.push(newRandomParticle(canvas))
-  }
+  //The map
+  board = new Board({
+    x : 0,
+    y : canvas.height / 2 - 100,
+    width : canvas.width,
+    height : 200,
+    song : loader.getAudio('song')
+  });
 
-}
+  board.start();
 
-function newRandomParticle(canvas){
-  return new Particle({
-      combustible : Utils.randomInteger(100, 300),
-      time : Utils.randomInteger(0,999),
-      consumes : Utils.randomInteger(10, 30),
-      x : Utils.randomInteger(0, canvas.width),
-      y : Utils.randomInteger(0, canvas.height),
-      normalSpeed : Utils.randomInteger(20, 30),
-      angle : Utils.randomInteger(0, 360),
-      color : colors[Utils.randomInteger(0, colors.length - 1)]
-    });
+  lifes = new Lifes({
+    x : 20,
+    y : board.y - 30,
+    amount : 3
+  })
+
+  //The player
+  player = new Player({
+    board : board,
+    x : 30,
+    y : 30,
+    lifes : lifes
+  })
+
 }
 
 /**
@@ -81,7 +83,7 @@ function initialize(canvas){
 module.exports = {
   initialize : initialize
 }
-},{"../lib/Engine":4,"../lib/utils":6,"../models/particleCombustible":9,"lodash":10}],2:[function(require,module,exports){
+},{"../lib/Engine":4,"../lib/loader":7,"../lib/utils":8,"../models/board":10,"../models/lifes":11,"../models/particleCombustible":13,"../models/player":14,"lodash":15}],2:[function(require,module,exports){
 var Engine = require('../lib/Engine');
 var Particle = require('../models/particleCombustible');
 var Utils = require('../lib/utils');
@@ -164,7 +166,7 @@ module.exports = {
   initialize : initialize, 
   stop: stop
 }
-},{"../lib/Engine":4,"../lib/utils":6,"../models/loaderItem":8,"../models/particleCombustible":9,"lodash":10}],3:[function(require,module,exports){
+},{"../lib/Engine":4,"../lib/utils":8,"../models/loaderItem":12,"../models/particleCombustible":13,"lodash":15}],3:[function(require,module,exports){
 var Victor = require('victor');
 
 //BaseEntity.js
@@ -195,7 +197,7 @@ BaseEntity.prototype.render = function(context, canvas){
 }
 
 module.exports = BaseEntity
-},{"victor":11}],4:[function(require,module,exports){
+},{"victor":16}],4:[function(require,module,exports){
 function Engine(canvas, loopable, maxIterations){
   this.canvas = canvas;
   this.context = canvas.getContext('2d');
@@ -299,8 +301,134 @@ Engine.prototype.setClearingMethod  = function (cb) {
 
 module.exports = Engine
 },{}],5:[function(require,module,exports){
+function Sprite(img){
+  this.img = img;
+  this.animations = {};
+}
+
+Sprite.prototype.addAnimation = function (name, frames, size, duration, pos, direction){
+  pos = pos ? pos : [0,0];
+  direction = direction ? direction : 'horizontal';
+
+  this.animations[name] = {
+    frames: frames,
+    frameTime: duration/1000/frames.length,
+    size: size,
+    direction: direction,
+    pos: pos,
+    frameIndex : 0,
+    frameDt : 0
+  }
+}
+
+Sprite.prototype.playAnimation = function (name, reset){
+  this.currentAnimation = name;
+  if(reset){
+    this.animations[name].frameIndex = 0;
+    this.animations[name].frameDt = 0;
+  }
+}
+
+Sprite.prototype.update = function(dt){
+  var currentAnimation = this.animations[this.currentAnimation];
+  if(currentAnimation){
+    currentAnimation.frameDt += dt;
+    if(currentAnimation.frameDt >= currentAnimation.frameTime){
+      currentAnimation.frameDt = 0;
+      currentAnimation.frameIndex = currentAnimation.frameIndex < (currentAnimation.frames.length - 1) ? currentAnimation.frameIndex + 1 : 0;
+    }
+  }
+}
+
+Sprite.prototype.render = function(ctx, x, y, resizeX, resizeY, angle){
+  var currentAnimation = this.animations[this.currentAnimation];
+  if(currentAnimation){
+    var width = resizeX ? resizeX : currentAnimation.size[0];
+    var height = resizeY ? resizeY : currentAnimation.size[1];
+    
+    ctx.save();
+    ctx.translate(x,y);
+
+    if(angle){   
+      ctx.rotate(angle * Math.PI / 180);
+    }
+
+    ctx.drawImage(
+      this.img,
+      currentAnimation.pos[0] + (currentAnimation.size[0] * currentAnimation.frames[currentAnimation.frameIndex]),
+      currentAnimation.pos[1],
+      currentAnimation.size[0],
+      currentAnimation.size[1],
+      - width/2, -height/2,
+      width,
+      height
+    );
+
+    if(angle){
+      ctx.translate(-width/2, -height/2) ; 
+    }
+    
+    ctx.restore();
+  }
+  
+}
+
+module.exports = Sprite
+},{}],6:[function(require,module,exports){
+var pressedKeys = {};
+
+function setKey(event, status) {
+    var code = event.keyCode;
+    var key;
+
+    switch(code) {
+    case 32:
+        key = 'SPACE'; break;
+    case 37:
+        key = 'LEFT'; break;
+    case 38:
+        key = 'UP'; break;
+    case 39:
+        key = 'RIGHT'; break;
+    case 40:
+        key = 'DOWN'; break;
+    default:
+        // Convert ASCII codes to letters
+        key = String.fromCharCode(code);
+    }
+
+    pressedKeys[key] = status;
+}
+
+document.addEventListener('keydown', function(e) {
+    setKey(e, true);
+});
+
+document.addEventListener('keyup', function(e) {
+    setKey(e, false);
+});
+
+window.addEventListener('blur', function() {
+    pressedKeys = {};
+});
+
+var input = {
+    isDown: function(key) {
+        return pressedKeys[key.toUpperCase()];
+    },
+    addKey : function(code){
+        pressedKeys[code.toUpperCase()] = true;
+    },
+    removeKey: function(code){
+        pressedKeys[code.toUpperCase()] =  false;
+    }
+};
+
+module.exports = input;
+},{}],7:[function(require,module,exports){
 var loader;
 var images = {};
+var audios = {};
 
 function onLoadComplete(fn){
   loader.addCompletionListener(fn);
@@ -314,6 +442,14 @@ function getImage(alias){
   return images[alias];
 }
 
+function addAudio(uri, alias){
+  audios[alias] = loader.addAudio(uri);
+}
+
+function getAudio(alias){
+  return audios[alias];
+}
+
 function initialize(){
   loader = new PxLoader();
 }
@@ -324,12 +460,14 @@ function start(){
 
 module.exports = {
   addImage: addImage,
+  addAudio: addAudio,
   getImage: getImage,
+  getAudio: getAudio,
   onLoadComplete: onLoadComplete,
   start: start,
   initialize : initialize
 }
-},{}],6:[function(require,module,exports){
+},{}],8:[function(require,module,exports){
 /**
   Utils you will use so maany times
 **/
@@ -426,7 +564,7 @@ Utils.randomColor = function(){
   return color;
 }
 module.exports = Utils;
-},{}],7:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 var loader = require('./lib/loader');
 var behavior = require('./behaviors/game');
 var behaviorLoader = require('./behaviors/loader_behavior');
@@ -440,13 +578,80 @@ function start(){
   behaviorLoader.initialize(canvas);
   loader.initialize();
   loader.addImage('images/sprite.png', 'player');
+  loader.addImage('images/life.png', 'life');
+  loader.addAudio('sound/CoolDog_SpaceJunkyard_Full.m4a', 'song');
   loader.onLoadComplete(function(){
     behaviorLoader.stop();
     behavior.initialize(canvas);
   });
   loader.start();
 }
-},{"./behaviors/game":1,"./behaviors/loader_behavior":2,"./lib/loader":5}],8:[function(require,module,exports){
+},{"./behaviors/game":1,"./behaviors/loader_behavior":2,"./lib/loader":7}],10:[function(require,module,exports){
+function Board(options){
+  this.x = options.x;
+  this.y = options.y;
+  this.width = options.width;
+  this.height = options.height;
+  this.song = options.song;
+}
+
+Board.prototype.render = function(context){
+  context.save();
+
+  context.translate(this.x, this.y);
+  context.rect(0, 0, this.width, this.height);
+  var gradient = context.createLinearGradient(0, 0, 0, this.height);
+  gradient.addColorStop(0, "rgb(0, 0, 0)");
+  gradient.addColorStop(1, "rgb(255, 0, 0)");
+  context.fillStyle = gradient;
+  context.fill();
+
+  context.restore();
+}
+
+Board.prototype.start = function(){
+  //this.song.play();
+}
+
+Board.prototype.collides = function(item){
+  //TODO: check if item collides with border
+}
+
+module.exports = Board
+},{}],11:[function(require,module,exports){
+var loader = require('../lib/loader');
+
+function Lifes(options){
+  this.x = options.x;
+  this.y = options.y;
+  this.amount = options.amount;
+  this.image = loader.getImage('life');
+}
+
+Lifes.prototype.render = function(context){
+  context.save();
+
+  context.translate(this.x, this.y);
+
+  for(var i = 0; i < this.amount; i++){
+    var x = i * 30;
+    var y = 0;
+
+    context.drawImage(
+      this.image,
+      x,
+      y,
+      20,
+      20
+    );
+  }
+
+  context.restore();
+}
+
+
+module.exports = Lifes
+},{"../lib/loader":7}],12:[function(require,module,exports){
 var Utils = require('../lib/utils');
 var Victor = require('victor');
 
@@ -636,7 +841,7 @@ Item.prototype.recalculateSize = function(dt){
 }
 
 module.exports = Item
-},{"../lib/utils":6,"victor":11}],9:[function(require,module,exports){
+},{"../lib/utils":8,"victor":16}],13:[function(require,module,exports){
 var BaseEntity = require('../lib/BaseEntity');
 var Victor = require('victor');
 var Utils = require('../lib/utils');
@@ -748,7 +953,75 @@ Particle.prototype.render = function(context){
 
 
 module.exports = Particle
-},{"../lib/BaseEntity":3,"../lib/utils":6,"victor":11}],10:[function(require,module,exports){
+},{"../lib/BaseEntity":3,"../lib/utils":8,"victor":16}],14:[function(require,module,exports){
+var BaseEntity = require('../lib/BaseEntity');
+var Victor = require('victor');
+var Utils = require('../lib/utils');
+var sprite = require('../lib/Sprite');
+var loader = require('../lib/loader');
+var input = require('../lib/input');
+
+function Player(opts){
+  //Add the board base position
+  opts.x = opts.x + opts.board.x;
+  opts.y = opts.y + opts.board.y;
+
+  BaseEntity.prototype.constructor.call(this, opts);
+  this.board = opts.board;
+  this.sprite = new sprite(loader.getImage('player'));
+  this.sprite.addAnimation('standby', [0,1], [30, 30], 1000, [0, 0]);
+  this.sprite.addAnimation('moveup', [0,1], [30, 30], 1000, [90, 0]);
+  this.sprite.addAnimation('movedown', [0,1], [30, 30], 1000, [180, 0]);
+  this.sprite.addAnimation('shoot', [0,1,2,1,0,1,2,3,4,5], [30, 30], 1000, [0, 30]);
+  this.sprite.playAnimation('standby');
+}
+
+Player.prototype = new BaseEntity({x: 0, y : 0});
+Player.prototype.constructor = Player;
+Player.prototype.parent = BaseEntity.prototype;
+
+Player.prototype.render = function(context){
+
+  context.save();
+  //context.translate(this.board.x, this.board.y);
+
+  this.sprite.render(context, this.pos.x, this.pos.y, 30, 30, this.angle);
+
+  context.restore();
+}
+
+Player.prototype.update = function(dt, context, canvas){
+  this.parent.update.call(this, dt);
+  this.sprite.update(dt);
+  
+
+  if(input.isDown('w') || input.isDown('UP')){
+    this.speed.y = 100;
+  }else if(input.isDown('s') || input.isDown('DOWN')){
+    this.speed.y = -100;
+  }
+
+  if(input.isDown('a') || input.isDown('LEFT')){
+    this.speed.x = -100;
+  }else if(input.isDown('d') || input.isDown('RIGHT')){
+    this.speed.x = 100;
+  }
+
+  //Check borders
+  if(this.pos.x > canvas.width){
+    this.pos.x = 0;
+  }else if(this.pos.x < 0){
+    this.pos.x = canvas.width;
+  }
+  if(this.pos.y >= this.board.y + this.board.height){
+    this.pos.y = this.board.y + this.board.height;
+  }else if(this.pos.y <= this.board.y){
+    this.pos.y = this.board.y;
+  }
+}
+
+module.exports = Player;
+},{"../lib/BaseEntity":3,"../lib/Sprite":5,"../lib/input":6,"../lib/loader":7,"../lib/utils":8,"victor":16}],15:[function(require,module,exports){
 (function (global){
 /**
  * @license
@@ -7537,7 +7810,7 @@ module.exports = Particle
 }.call(this));
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],11:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 exports = module.exports = Victor;
 
 /**
@@ -8587,4 +8860,4 @@ function degrees2radian (deg) {
 	return deg / degrees;
 }
 
-},{}]},{},[7]);
+},{}]},{},[9]);
